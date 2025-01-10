@@ -28,6 +28,8 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
   // 3. 获取所有子文件夹(depth=1)
   let sub_folders = get_subfolders(&temp_dir)?;
 
+  println!("sub_folders: {:?}", sub_folders);
+
   for folder in sub_folders {
     // 4. 分析这个子文件夹下的文件信息
     let folder_info = analyze_folder(&folder)?;
@@ -60,6 +62,36 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
     move_folder(&folder, Path::new(target_path))?;
   }
 
+  // 8. 读取所有一级文件
+  let files = get_files(&temp_dir)?;
+  for file in files {
+    let file_info = analyze_file(&file)?;
+
+    let category = match classify_folder_with_openai(
+      &client,
+      &app_config.openai_endpoint,
+      &app_config.openai_api_key,
+      &app_config.openai_model,
+      &file_info,
+    )
+    .await
+    {
+      Ok(cat) => cat,
+      Err(e) => {
+        eprintln!("Failed to classify folder {}: {}", file_info, e);
+        continue;
+      }
+    };
+
+    let target_path = app_config.classifications.iter()
+        .find(|c| c.prompt == category)
+        .map(|c| &c.dir)
+        .expect("No matching category found in config");
+
+    move_folder(&file, Path::new(target_path))?;
+  }
+  
+
   Ok(())
 }
 
@@ -70,8 +102,23 @@ fn load_config(path: &str) -> Result<AppConfig, Box<dyn std::error::Error>> {
   Ok(app_config)
 }
 
+fn get_files(dir: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+  let mut result = Vec::new();
+  for entry in fs::read_dir(dir)? {
+    let entry = entry?;
+    let path = entry.path();
+    if path.is_file() {
+      result.push(entry.path());
+    }
+  }
+  Ok(result)
+}
+
+fn analyze_file(file_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+  Ok(file_path.file_name().unwrap().to_string_lossy().to_string())
+}
+
 fn get_subfolders(dir: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-  println!("get_subfolders: {}", dir);
   let mut result = Vec::new();
   for entry in fs::read_dir(dir)? {
     let entry = entry?;
@@ -107,6 +154,12 @@ async fn classify_folder_with_openai(
   model: &str,
   folder_info: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+  // 增加调用的调试信息
+  println!("classify_folder_with_openai: endpoint: {}", endpoint);
+  println!("classify_folder_with_openai: api_key: {}", api_key);
+  println!("classify_folder_with_openai: model: {}", model);
+  println!("classify_folder_with_openai: folder_info: {}", folder_info);
+
   let prompt = format!(r#"请从下列类型中选择一个最合适的类型并只返回这个 type 的 JSON, 例如 {{ "category": "movie" }}. 已知类型: ["movie", "anime", "document", "others"]。 文件夹内容信息: {}"#, folder_info);
   let body = serde_json::json!({
     "model": model,
