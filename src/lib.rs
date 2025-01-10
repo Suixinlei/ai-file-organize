@@ -4,18 +4,21 @@ use serde::Deserialize;
 use reqwest::Client;
 
 #[derive(Deserialize, Debug)]
-struct Config {
-  classifications: std::collections::HashMap<String, String>,
+struct Classification {
+    prompt: String,
+    dir: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct AppConfig {
-  api_key: String,
-  openai_model: String,
-  config: Config,
+    openai_endpoint: String,
+    openai_api_key: String,
+    openai_model: String,
+    classifications: Vec<Classification>,
 }
 
 pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<(), Box<dyn std::error::Error>> {
+  println!("temp_dir: {}", temp_dir);
   // 1. 读取配置文件
   let app_config: AppConfig = load_config(&config_path.unwrap_or_else(|| "config.json".into()))?;
 
@@ -32,7 +35,8 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
     // 5. 调用 GPT，获取分类结果
     let category = match classify_folder_with_openai(
       &client,
-      &app_config.api_key,
+      &app_config.openai_endpoint,
+      &app_config.openai_api_key,
       &app_config.openai_model,
       &folder_info,
     )
@@ -47,9 +51,10 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
 
     // 6. 根据 category， 在配置中找到目标路径
     // 如果找不到，就用 others 兜底
-    let target_path = app_config.config.classifications.get(&category).unwrap_or_else(|| {
-      app_config.config.classifications.get("others").expect("You must configure 'others' category in config")
-    });
+    let target_path = app_config.classifications.iter()
+        .find(|c| c.prompt == category)
+        .map(|c| &c.dir)
+        .expect("No matching category found in config");
 
     // 7. 将文件夹移动到目标路径
     move_folder(&folder, Path::new(target_path))?;
@@ -59,12 +64,14 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
 }
 
 fn load_config(path: &str) -> Result<AppConfig, Box<dyn std::error::Error>> {
+  println!("load_config: {}", path);
   let content = fs::read_to_string(path)?;
   let app_config:AppConfig = serde_json::from_str(&content)?;
   Ok(app_config)
 }
 
 fn get_subfolders(dir: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+  println!("get_subfolders: {}", dir);
   let mut result = Vec::new();
   for entry in fs::read_dir(dir)? {
     let entry = entry?;
@@ -95,6 +102,7 @@ fn analyze_folder(folder_path: &Path) -> Result<String, Box<dyn std::error::Erro
 // 调用 OpenAI API 进行分类
 async fn classify_folder_with_openai(
   client: &Client,
+  endpoint: &str,
   api_key: &str,
   model: &str,
   folder_info: &str,
@@ -115,7 +123,7 @@ async fn classify_folder_with_openai(
   });
 
   let resp = client
-      .post("https://api.openai.com/v1/chat/completions")
+      .post(endpoint)
       .bearer_auth(api_key)
       .json(&body)
       .send()

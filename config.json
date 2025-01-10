@@ -1,0 +1,19 @@
+{
+  "openai_endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "openai_api_key": "sk-1fa68db6df854138b74224e20d5b5e20",
+  "openai_model": "qwen-turbo",
+  "classifications": [
+    {
+      "prompt": "这是电影",
+      "dir": "/Users/roer/Downloads/movie"
+    },
+    {
+      "prompt": "这是电视剧",
+      "dir": "/Users/roer/Downloads/tv"
+    },
+    {
+      "prompt": "这是图片",
+      "dir": "/Users/roer/Downloads/image"
+    }
+  ]
+}
