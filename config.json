@@ -5,15 +5,15 @@
   "classifications": [
     {
       "prompt": "这是电影",
-      "dir": "/Users/roer/Downloads/movie"
+      "dir": "/Users/xinleisui/Downloads/movie"
     },
     {
       "prompt": "这是电视剧",
-      "dir": "/Users/roer/Downloads/tv"
+      "dir": "/Users/xinleisui/Downloads/tv"
     },
     {
       "prompt": "这是图片",
-      "dir": "/Users/roer/Downloads/image"
+      "dir": "/Users/xinleisui/Downloads/image"
     }
   ]
 }

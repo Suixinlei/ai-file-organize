@@ -22,11 +22,15 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
   // 1. 读取配置文件
   let app_config: AppConfig = load_config(&config_path.unwrap_or_else(|| "config.json".into()))?;
 
+  // 获取所有 dir 的列表
+  let destination_dirs = app_config.classifications.iter().map(|c| c.dir.clone()).collect::<Vec<String>>();
+  println!("dirs: {:?}", destination_dirs);
+
   // 2. 创建 HTTP 客户端
   let client = Client::new();
 
   // 3. 获取所有子文件夹(depth=1)
-  let sub_folders = get_subfolders(&temp_dir)?;
+  let sub_folders = get_subfolders(&temp_dir, &destination_dirs)?;
 
   println!("sub_folders: {:?}", sub_folders);
 
@@ -118,11 +122,17 @@ fn analyze_file(file_path: &Path) -> Result<String, Box<dyn std::error::Error>> 
   Ok(file_path.file_name().unwrap().to_string_lossy().to_string())
 }
 
-fn get_subfolders(dir: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+fn get_subfolders(dir: &str, destination_dirs: &Vec<String>) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
   let mut result = Vec::new();
   for entry in fs::read_dir(dir)? {
     let entry = entry?;
     let path = entry.path();
+    // 获取完整绝对路径
+    let full_path = path.to_string_lossy().to_string();
+    // 如果目标文件夹列表中包含这个文件夹，则跳过
+    if destination_dirs.contains(&full_path) {
+      continue;
+    }
     if path.is_dir() {
       result.push(entry.path());
     }
