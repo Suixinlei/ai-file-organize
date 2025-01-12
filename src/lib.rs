@@ -8,26 +8,44 @@ use std::path::{Path};
 use reqwest::Client;
 
 pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<(), Box<dyn std::error::Error>> {
+  // 输出三个空行
+  println!("\n\n\n");
+
   let config_path_str = config_path.unwrap_or("config.json".to_string());
   let load_config_result = load_config(&temp_dir, &config_path_str)?;
 
   let app_config = load_config_result.app_config;
 
-  println!("app_config: {:?}", app_config);
-
   let sub_files = load_config_result.sub_files;
-
-  println!("sub_files: {:?}", sub_files);
 
   for file in sub_files {
 
     let file_info = analyze_file(&file)?;
 
+    println!("file: {:?}", file);
     println!("file_info: {}", file_info);
 
     let category = classify_folder_with_openai(&file_info).await?;
 
+    // 如果是其他，则跳过
+    if category == "others" {
+      continue;
+    }
+
     println!("category: {}", category);
+
+    let move_dir = match app_config.classifications.iter().find(|c| c.prompt == category) {
+      Some(classification) => &Path::new(&classification.dir),
+      None => continue,
+    };
+
+    // 需要保证 move_dir 存在并且是绝对路径
+    if !move_dir.exists() {
+      fs::create_dir_all(move_dir)?;
+    }
+
+    // 将文件移动到对应的文件夹
+    move_folder(&file, &move_dir)?;
   }
   
 
@@ -55,13 +73,10 @@ async fn classify_folder_with_openai(
       .json::<serde_json::Value>()
       .await?;
 
-  println!("resp: {:?}", resp);
-
   // 获取 resp.output.text
   let category = resp["output"]["text"].as_str().unwrap_or("others");
 
   Ok(category.to_string())
-
 }
 
 // 移动文件夹

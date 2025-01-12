@@ -1,16 +1,16 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
-struct Classification {
-    prompt: String,
-    dir: String,
+pub struct Classification {
+    pub prompt: String,
+    pub dir: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct AppConfig {
-  classifications: Vec<Classification>,
+  pub classifications: Vec<Classification>,
 }
 
 

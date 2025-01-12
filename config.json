@@ -1,19 +1,38 @@
 {
-  "openai_endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "openai_api_key": "sk-1fa68db6df854138b74224e20d5b5e20",
-  "openai_model": "qwen-turbo",
   "classifications": [
     {
-      "prompt": "这是电影",
-      "dir": "/Users/xinleisui/Downloads/movie"
+      "prompt": "视频文件",
+      "dir": "/Users/roer/Downloads/video"
     },
     {
-      "prompt": "这是电视剧",
-      "dir": "/Users/xinleisui/Downloads/tv"
+      "prompt": "个人图片",
+      "dir": "/Users/roer/Downloads/photo"
     },
     {
-      "prompt": "这是图片",
-      "dir": "/Users/xinleisui/Downloads/image"
+      "prompt": "简历",
+      "dir": "/Users/roer/Downloads/resume"
+    },
+    {
+      "prompt": "安装包",
+      "dir": "/Users/roer/Downloads/install"
+    },
+    {
+      "prompt": "工作文档",
+      "dir": "/Users/roer/Downloads/work"
+    },
+    {
+      "prompt": "画图模型",
+      "dir": "/Users/roer/Downloads/stable-diffusion-model"
+    },
+    {
+      "prompt": "发票",
+      "dir": "/Users/roer/Downloads/invoice"
+    },
+    {
+      "prompt": "音乐",
+      "dir": "/Users/roer/Downloads/music"
     }
   ]
 }
+
