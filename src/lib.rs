@@ -1,12 +1,10 @@
 mod load_config;
+mod analyze_file;
 
 use load_config::load_config;
+use analyze_file::analyze_file;
 use std::fs;
 use std::path::{Path};
-use chrono;
-use walkdir::WalkDir;  
-
-
 use reqwest::Client;
 
 pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<(), Box<dyn std::error::Error>> {
@@ -26,86 +24,30 @@ pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<
     let file_info = analyze_file(&file)?;
 
     println!("file_info: {}", file_info);
+
+    let category = classify_folder_with_openai(&file_info).await?;
+
+    println!("category: {}", category);
   }
   
 
   Ok(())
 }
 
-fn print_tree_walkdir(path: &str) -> Result<String, Box<dyn std::error::Error>> {
-  let mut tree_output = Vec::new();
-  for entry in WalkDir::new(path).max_depth(1).into_iter().filter_map(|e| e.ok()) {  
-      let depth = entry.depth();  
-      let indent = "    ".repeat(depth);  
-      tree_output.push(format!("{}└── {}", indent, entry.file_name().to_string_lossy()));
-  }  
-  Ok(tree_output.join("\n"))
-}
-
-fn analyze_file(file_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-
-  // 检测是否为目录
-  if file_path.is_dir() {
-    let tree_output = print_tree_walkdir(&file_path.to_string_lossy())?;
-    return Ok(tree_output);
-  }
-
-  // 如果是文件，需要获取
-  // 1. 文件名
-  // 2. 文件大小, 使用 KB 单位
-  // 3. 文件创建日期, 使用 yyyy-MM-dd HH:mm:ss 格式
-  // 4. 文件修改日期, 使用 yyyy-MM-dd HH:mm:ss 格式
-  let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
-  let file_size = (file_path.metadata()?.len() as f64 / 1024.0).round() / 100.0;
-  let file_create_date = file_path.metadata()?.created()?;
-  let file_modify_date = file_path.metadata()?.modified()?;
-  
-  // 格式化日期
-  let file_create_date = chrono::DateTime::<chrono::Local>::from(file_create_date)
-    .format("%Y-%m-%d %H:%M:%S")
-    .to_string();
-  let file_modify_date = chrono::DateTime::<chrono::Local>::from(file_modify_date)
-    .format("%Y-%m-%d %H:%M:%S")
-    .to_string();
-
-  // 将以上信息合并到一段文字中
-  let file_info = format!("文件名: {}, 文件大小: {} KB, 文件创建日期: {}, 文件修改日期: {}", file_name, file_size, file_create_date, file_modify_date);
-
-  Ok(file_info)
-}
-
 // 调用 OpenAI API 进行分类
 async fn classify_folder_with_openai(
-  client: &Client,
-  endpoint: &str,
-  api_key: &str,
-  model: &str,
-  folder_info: &str,
+  file_info: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-  // 增加调用的调试信息
-  println!("classify_folder_with_openai: endpoint: {}", endpoint);
-  println!("classify_folder_with_openai: api_key: {}", api_key);
-  println!("classify_folder_with_openai: model: {}", model);
-  println!("classify_folder_with_openai: folder_info: {}", folder_info);
-
-  let prompt = format!(r#"请从下列类型中选择一个最合适的类型并只返回这个 type 的 JSON, 例如 {{ "category": "movie" }}. 已知类型: ["movie", "anime", "document", "others"]。 文件夹内容信息: {}"#, folder_info);
+  let client = Client::new();
   let body = serde_json::json!({
-    "model": model,
-    "messages": [
-        {
-            "role": "system",
-            "content": "你是一个分类助手"
-        },
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
+    "input": {
+      "prompt": file_info,
+    }
   });
 
   let resp = client
-      .post(endpoint)
-      .bearer_auth(api_key)
+      .post("https://dashscope.aliyuncs.com/api/v1/apps/f26835a3c89d447786d0e8483a96e90f/completion")
+      .bearer_auth("sk-1fa68db6df854138b74224e20d5b5e20	")
       .json(&body)
       .send()
       .await?
@@ -113,21 +55,12 @@ async fn classify_folder_with_openai(
       .json::<serde_json::Value>()
       .await?;
 
-  // 简单解析: 假设我们引导 GPT 只返回一行 JSON: { "category": "<xxx>" }
-  // 下面要从返回的 JSON 中取到 GPT 从 assistant role 对话中的content
-  if let Some(choices) = resp["choices"].as_array() {
-      if let Some(choice) = choices.get(0) {
-          if let Some(content) = choice["message"]["content"].as_str() {
-              // 对content进行解析
-              let parsed: serde_json::Value = serde_json::from_str(content)?;
-              if let Some(cat) = parsed["category"].as_str() {
-                  return Ok(cat.to_string());
-              }
-          }
-      }
-  }
+  println!("resp: {:?}", resp);
 
-  Ok("others".to_string())
+  // 获取 resp.output.text
+  let category = resp["output"]["text"].as_str().unwrap_or("others");
+
+  Ok(category.to_string())
 
 }
 

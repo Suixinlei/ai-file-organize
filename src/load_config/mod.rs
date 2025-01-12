@@ -10,10 +10,7 @@ struct Classification {
 
 #[derive(Deserialize, Debug)]
 pub struct AppConfig {
-    openai_endpoint: String,
-    openai_api_key: String,
-    openai_model: String,
-    classifications: Vec<Classification>,
+  classifications: Vec<Classification>,
 }
 
 
@@ -31,7 +28,12 @@ fn get_subfiles(dir: &str, destination_dirs: &Vec<String>) -> Result<Vec<PathBuf
     // 获取完整绝对路径
     let full_path = path.to_string_lossy().to_string();
 
-    // 如果目标文件夹列表中包含这个文件夹，则跳过
+    // 如果是 .DS_Store 文件则跳过
+    if path.file_name().unwrap().to_string_lossy() == ".DS_Store" {
+      continue;
+    }
+
+    // 如果目标文件夹列表中包含这个文件夹，则跳过 
     if destination_dirs.contains(&full_path) {
       continue;
     }
