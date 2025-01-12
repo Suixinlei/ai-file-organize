@@ -1,159 +1,77 @@
+mod load_config;
+
+use load_config::load_config;
 use std::fs;
-use std::path::{Path, PathBuf};
-use serde::Deserialize;
+use std::path::{Path};
+use chrono;
+use walkdir::WalkDir;  
+
+
 use reqwest::Client;
 
-#[derive(Deserialize, Debug)]
-struct Classification {
-    prompt: String,
-    dir: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct AppConfig {
-    openai_endpoint: String,
-    openai_api_key: String,
-    openai_model: String,
-    classifications: Vec<Classification>,
-}
-
 pub async fn run_app(temp_dir: String, config_path: Option<String>, ) -> Result<(), Box<dyn std::error::Error>> {
-  println!("temp_dir: {}", temp_dir);
-  // 1. 读取配置文件
-  let app_config: AppConfig = load_config(&config_path.unwrap_or_else(|| "config.json".into()))?;
+  let config_path_str = config_path.unwrap_or("config.json".to_string());
+  let load_config_result = load_config(&temp_dir, &config_path_str)?;
 
-  // 获取所有 dir 的列表
-  let destination_dirs = app_config.classifications.iter().map(|c| c.dir.clone()).collect::<Vec<String>>();
-  println!("dirs: {:?}", destination_dirs);
+  let app_config = load_config_result.app_config;
 
-  // 2. 创建 HTTP 客户端
-  let client = Client::new();
+  println!("app_config: {:?}", app_config);
 
-  // 3. 获取所有子文件夹(depth=1)
-  let sub_folders = get_subfolders(&temp_dir, &destination_dirs)?;
+  let sub_files = load_config_result.sub_files;
 
-  println!("sub_folders: {:?}", sub_folders);
+  println!("sub_files: {:?}", sub_files);
 
-  for folder in sub_folders {
-    // 4. 分析这个子文件夹下的文件信息
-    let folder_info = analyze_folder(&folder)?;
+  for file in sub_files {
 
-    // 5. 调用 GPT，获取分类结果
-    let category = match classify_folder_with_openai(
-      &client,
-      &app_config.openai_endpoint,
-      &app_config.openai_api_key,
-      &app_config.openai_model,
-      &folder_info,
-    )
-    .await
-    {
-      Ok(category) => category,
-      Err(e) => {
-        eprintln!("Failed to classify folder {}: {}", folder.display(), e);
-        continue;
-      }
-    };
-
-    // 6. 根据 category， 在配置中找到目标路径
-    // 如果找不到，就用 others 兜底
-    let target_path = app_config.classifications.iter()
-        .find(|c| c.prompt == category)
-        .map(|c| &c.dir)
-        .expect("No matching category found in config");
-
-    // 7. 将文件夹移动到目标路径
-    move_folder(&folder, Path::new(target_path))?;
-  }
-
-  // 8. 读取所有一级文件
-  let files = get_files(&temp_dir)?;
-  for file in files {
     let file_info = analyze_file(&file)?;
 
-    let category = match classify_folder_with_openai(
-      &client,
-      &app_config.openai_endpoint,
-      &app_config.openai_api_key,
-      &app_config.openai_model,
-      &file_info,
-    )
-    .await
-    {
-      Ok(cat) => cat,
-      Err(e) => {
-        eprintln!("Failed to classify folder {}: {}", file_info, e);
-        continue;
-      }
-    };
-
-    let target_path = app_config.classifications.iter()
-        .find(|c| c.prompt == category)
-        .map(|c| &c.dir)
-        .expect("No matching category found in config");
-
-    move_folder(&file, Path::new(target_path))?;
+    println!("file_info: {}", file_info);
   }
   
 
   Ok(())
 }
 
-fn load_config(path: &str) -> Result<AppConfig, Box<dyn std::error::Error>> {
-  println!("load_config: {}", path);
-  let content = fs::read_to_string(path)?;
-  let app_config:AppConfig = serde_json::from_str(&content)?;
-  Ok(app_config)
-}
-
-fn get_files(dir: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-  let mut result = Vec::new();
-  for entry in fs::read_dir(dir)? {
-    let entry = entry?;
-    let path = entry.path();
-    if path.is_file() {
-      result.push(entry.path());
-    }
-  }
-  Ok(result)
+fn print_tree_walkdir(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+  let mut tree_output = Vec::new();
+  for entry in WalkDir::new(path).max_depth(1).into_iter().filter_map(|e| e.ok()) {  
+      let depth = entry.depth();  
+      let indent = "    ".repeat(depth);  
+      tree_output.push(format!("{}└── {}", indent, entry.file_name().to_string_lossy()));
+  }  
+  Ok(tree_output.join("\n"))
 }
 
 fn analyze_file(file_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-  Ok(file_path.file_name().unwrap().to_string_lossy().to_string())
-}
 
-fn get_subfolders(dir: &str, destination_dirs: &Vec<String>) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-  let mut result = Vec::new();
-  for entry in fs::read_dir(dir)? {
-    let entry = entry?;
-    let path = entry.path();
-    // 获取完整绝对路径
-    let full_path = path.to_string_lossy().to_string();
-    // 如果目标文件夹列表中包含这个文件夹，则跳过
-    if destination_dirs.contains(&full_path) {
-      continue;
-    }
-    if path.is_dir() {
-      result.push(entry.path());
-    }
-  }
-  Ok(result)
-}
-
-// 分析文件夹，获取一些特征信息，可以是文件名列表、大小等等
-fn analyze_folder(folder_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-  let mut file_names = Vec::new();
-  for entry in fs::read_dir(folder_path)? {
-    let entry = entry?;
-    if entry.path().is_file() {
-      file_names.push(entry.file_name().to_string_lossy().to_string());
-    }
-    
-    // TODO: 还可以加上文件大小、类型等信息
+  // 检测是否为目录
+  if file_path.is_dir() {
+    let tree_output = print_tree_walkdir(&file_path.to_string_lossy())?;
+    return Ok(tree_output);
   }
 
-  // 这里我们简单地返回一个逗号分隔的文件名列表
-  Ok(file_names.join(","))
+  // 如果是文件，需要获取
+  // 1. 文件名
+  // 2. 文件大小, 使用 KB 单位
+  // 3. 文件创建日期, 使用 yyyy-MM-dd HH:mm:ss 格式
+  // 4. 文件修改日期, 使用 yyyy-MM-dd HH:mm:ss 格式
+  let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
+  let file_size = (file_path.metadata()?.len() as f64 / 1024.0).round() / 100.0;
+  let file_create_date = file_path.metadata()?.created()?;
+  let file_modify_date = file_path.metadata()?.modified()?;
+  
+  // 格式化日期
+  let file_create_date = chrono::DateTime::<chrono::Local>::from(file_create_date)
+    .format("%Y-%m-%d %H:%M:%S")
+    .to_string();
+  let file_modify_date = chrono::DateTime::<chrono::Local>::from(file_modify_date)
+    .format("%Y-%m-%d %H:%M:%S")
+    .to_string();
+
+  // 将以上信息合并到一段文字中
+  let file_info = format!("文件名: {}, 文件大小: {} KB, 文件创建日期: {}, 文件修改日期: {}", file_name, file_size, file_create_date, file_modify_date);
+
+  Ok(file_info)
 }
 
 // 调用 OpenAI API 进行分类
